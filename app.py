@@ -50,7 +50,6 @@ def fetch_noaa_forecast():
 # Fetch Open-Meteo aggregate wave model
 @st.cache_data(ttl=3600)
 def fetch_openmeteo_waves(date):
-    # Seattle coords for central Puget Sound
     lat = 47.6062
     lon = -122.3321
     start = date.strftime("%Y-%m-%d")
@@ -69,7 +68,6 @@ def fetch_openmeteo_waves(date):
             'wave_dir': hourly.get('wave_direction', []),
             'wave_period': hourly.get('wave_period', [])
         })
-        # Convert meters to feet (1 m ≈ 3.281 ft)
         df['wave_height_ft'] = (df['wave_height_m'] * 3.281).round(1)
         df['wind_wave_ft'] = (df['wind_wave_m'] * 3.281).round(1)
         df['swell_wave_ft'] = (df['swell_wave_m'] * 3.281).round(1)
@@ -85,11 +83,6 @@ def fetch_alerts():
     if response.status_code == 200:
         return response.json().get('features', [])
     return []
-
-# Extraction helper
-def extract_from_text(text, keyword):
-    match = re.search(rf"{keyword}.*?(\d+[\d-]*\s*(kt|ft|miles|to|around|with|becoming|variable)?)", text, re.IGNORECASE)
-    return match.group(1) if match else "N/A"
 
 # Load data
 hilo_tides = fetch_tides(shift_date)
@@ -114,7 +107,7 @@ else:
     st.success("No active weather alerts for Puget Sound.")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Tides
+# Tides (list only - NO chart)
 st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
 if filtered_tides:
     for tide in filtered_tides:
@@ -128,10 +121,8 @@ st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div class='box'><h3>Open-Meteo Aggregate Wave Model (Puget Sound)</h3>", unsafe_allow_html=True)
 st.write("Significant wave height from global/local models (ICON, GFS Wave, etc.). Values in feet.")
 if not openmeteo_df.empty:
-    # Filter for shift period
     shift_df = openmeteo_df[(openmeteo_df['time'] >= shift_start) & (openmeteo_df['time'] < shift_end)]
     if not shift_df.empty:
-        # Summary stats for shift
         max_wave = shift_df['wave_height_ft'].max()
         avg_wave = shift_df['wave_height_ft'].mean().round(1)
         max_wind_wave = shift_df['wind_wave_ft'].max()
@@ -140,7 +131,6 @@ if not openmeteo_df.empty:
         st.write(f"**Average Significant Wave Height**: {avg_wave} ft")
         st.write(f"**Max Wind Waves**: {max_wind_wave} ft")
         st.write(f"**Max Swell Waves**: {max_swell} ft")
-        # Period summaries
         st.write("**Morning (0800–1159)**: Waves ~{:.1f}–{:.1f} ft".format(
             shift_df[shift_df['time'].dt.hour < 12]['wave_height_ft'].min(),
             shift_df[shift_df['time'].dt.hour < 12]['wave_height_ft'].max()))
@@ -182,4 +172,4 @@ for i, period_name in enumerate(time_periods):
         st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
-st.caption("Primary: NOAA. Waves enhanced with Open-Meteo aggregate model (global + local wave models). Cross-check Windy, AccuWeather, etc. Stay safe!")
+st.caption("Primary: NOAA. Waves enhanced with Open-Meteo aggregate model. Cross-check Windy, AccuWeather, etc. Stay safe!")
