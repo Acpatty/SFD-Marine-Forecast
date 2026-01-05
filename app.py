@@ -5,18 +5,21 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import re
 import base64
+from io import BytesIO
 
-# Embedded fireboat image (Base64) - no local file needed!
-fireboat_base64 = "iVBORw0KGgoAAAANSUhEUgAAA...[full base64 string here]...AAA=="  # We'll get this next
+# === PASTE YOUR BASE64 STRING HERE (from base64-image.de) ===
+# Replace everything inside the quotes below with your long Base64 string
+fireboat_base64 = "PASTE_YOUR_BASE64_STRING_HERE"
 
-# Decode for display
-def get_base64_image():
-    return base64.b64decode(fireboat_base64)
+# Function to load the embedded image
+def get_fireboat_image():
+    img_data = base64.b64decode(fireboat_base64)
+    return BytesIO(img_data)
 
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS
+# Custom CSS for subdued blues/greys
 st.markdown("""
 <style>
 .header {background-color: #001f3f; padding: 20px; text-align: center; color: white;}
@@ -27,7 +30,7 @@ st.markdown("""
 # Header with embedded logo
 col1, col2 = st.columns([1,5])
 with col1:
-    st.image(get_base64_image(), width=120)
+    st.image(get_fireboat_image(), width=120)
 with col2:
     st.markdown("<div class='header'><h1>Seattle Fire Department:<br>Daily Marine Forecast</h1></div>", unsafe_allow_html=True)
 
@@ -35,8 +38,8 @@ with col2:
 today = datetime.today().date()
 shift_date = st.date_input("Select Shift Start Date (0800)", today)
 
-# Fetch tides
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+# Fetch tides (cached)
+@st.cache_data(ttl=3600)
 def fetch_tides(date):
     begin = date.strftime("%Y%m%d")
     end = (date + timedelta(days=1)).strftime("%Y%m%d")
@@ -50,7 +53,7 @@ def fetch_tides(date):
 @st.cache_data(ttl=3600)
 def fetch_forecast():
     url = "https://api.weather.gov/zones/marine/PZZ135/forecast"
-    headers = {'User-Agent': 'SFD Marine App'}
+    headers = {'User-Agent': 'SFD Marine App (contact: your-email-if-needed)'}
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         return response.json()['properties']['periods']
@@ -66,7 +69,7 @@ def fetch_alerts():
         return response.json().get('features', [])
     return []
 
-# Simple parsing of NOAA detailedForecast text
+# Extract info from forecast text
 def extract_from_text(text, keyword):
     match = re.search(rf"{keyword}.*?(\d+[\d-]*\s*(kt|ft|miles)?)", text, re.IGNORECASE)
     return match.group(1) if match else "N/A"
@@ -81,35 +84,46 @@ st.markdown("<div class='box'><h3>Weather Alerts</h3>", unsafe_allow_html=True)
 if alerts:
     for alert in alerts:
         props = alert['properties']
-        st.error(f"**{props['event']}**: {props.get('headline', 'No headline')} – {props.get('description', '')}")
+        st.error(f"**{props['event']}**: {props.get('headline', 'Active Alert')} – {props.get('description', '')}")
 else:
     st.success("No active weather alerts for Puget Sound.")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Tides Section
+# Tides List
 st.markdown("<div class='box'><h3>Tides for Shift (Seattle, feet MLLW)</h3>", unsafe_allow_html=True)
-for tide in hilo_tides:
-    st.write(f"**{tide['type'].title()} Tide**: {tide['t']} – {tide['v']} ft")
+if hilo_tides:
+    for tide in hilo_tides:
+        time_str = tide['t'][8:]  # Remove date, keep time
+        st.write(f"**{tide['type'].title()} Tide**: {time_str} – {tide['v']} ft")
+else:
+    st.write("No tide data available.")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # Tide Chart
 st.markdown("<h3>Tide Chart (0800 to 0800)</h3>", unsafe_allow_html=True)
 if hourly_tides:
-    df = pd.DataFrame(hourly_tides[:25])  # Approx 24 hours
+    df = pd.DataFrame(hourly_tides[:25])  # ~24 hours
     df['t'] = pd.to_datetime(df['t'])
     df['v'] = pd.to_numeric(df['v'])
     fig, ax = plt.subplots(figsize=(10,4))
-    ax.plot(df['t'], df['v'], color='#001f3f')
+    ax.plot(df['t'], df['v'], color='#001f3f', linewidth=2)
+    ax.set_title("Tide Height (ft MLLW)")
     ax.set_ylabel("Height (ft)")
-    ax.grid(True)
+    ax.grid(True, alpha=0.3)
+    plt.xticks(rotation=45)
     st.pyplot(fig)
 else:
-    st.write("Tide data unavailable.")
+    st.write("Tide chart unavailable.")
 
 # Forecast Periods
 st.markdown("<h3>Forecast Periods (Puget Sound)</h3>", unsafe_allow_html=True)
 cols = st.columns(2)
-time_periods = ["Morning (0800–1159)", "Afternoon (1200–1659)", "Evening (1700–2359)", "Overnight (0000–0800)"]
+time_periods = [
+    "Morning (0800–1159)",
+    "Afternoon (1200–1659)",
+    "Evening (1700–2359)",
+    "Overnight (0000–0800)"
+]
 
 for i, period_name in enumerate(time_periods):
     with cols[i % 2]:
@@ -120,12 +134,12 @@ for i, period_name in enumerate(time_periods):
             wind = extract_from_text(text, "wind")
             waves = extract_from_text(text, "wave|seas")
             vis = extract_from_text(text, "visibility")
-            st.write(f"**Conditions**: {p['name']} – {text.split('.')[0]}.")
+            st.write(f"**Conditions**: {p['shortForecast'] or text.split('.')[0]}")
             st.write(f"**Wind**: {wind}")
             st.write(f"**Wave Height**: {waves}")
             st.write(f"**Visibility**: {vis}")
         else:
-            st.write("Data limited – check NOAA for full forecast.")
+            st.write("Detailed period forecast unavailable – check NOAA directly.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-st.caption("Data from NOAA (primary), cross-referenced with other models. Always verify real-time conditions.")
+st.caption("Primary data: NOAA. Always confirm real-time conditions before operations. Stay safe!")
