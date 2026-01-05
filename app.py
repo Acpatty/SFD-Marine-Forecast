@@ -7,57 +7,33 @@ import re
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - compact and readable
+# Custom CSS - ultra-compact
 st.markdown("""
 <style>
-.header {background-color: #001f3f; padding: 15px; text-align: center; color: white; margin-bottom: 20px;}
-.box {background-color: #f0f5fa; border-radius: 10px; padding: 12px; margin: 8px 0; box-shadow: 2px 2px 6px rgba(0,0,0,0.1);}
-.noaa-text {white-space: pre-wrap; line-height: 1.4; font-size: 0.9rem; margin-top: 8px;}
-h3, h4 {margin: 0 0 8px 0;}
+.header {background-color: #001f3f; padding: 12px; text-align: center; color: white; margin-bottom: 15px;}
+.box {background-color: #f0f5fa; border-radius: 8px; padding: 10px; margin: 6px 0; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);}
+.noaa-text {white-space: pre-wrap; line-height: 1.3; font-size: 0.88rem; margin-top: 6px;}
+h3, h4 {margin: 0 0 6px 0;}
+p {margin: 4px 0 !important;}
 </style>
 """, unsafe_allow_html=True)
 
 # Compact header
-st.markdown("<div class='header'><h2>Seattle Fire Department<br>Daily Marine Forecast</h2></div>", unsafe_allow_html=True)
+st.markdown("<div class='header'><h2>SFD Daily Marine Forecast</h2></div>", unsafe_allow_html=True)
 
 # Auto-default to today
 today = datetime.today().date()
-shift_date = st.date_input("Shift Start Date (0800)", value=today)
+shift_date = st.date_input("Shift Start (0800)", value=today)
 
 # Shift times
 shift_start = datetime(shift_date.year, shift_date.month, shift_date.day, 8, 0)
 shift_end = shift_start + timedelta(days=1)
 
-# WMO Weather Code mapping (shortened)
+# WMO Weather Code mapping (short)
 WMO_CODES = {
-    0: "Clear",
-    1: "Mostly clear",
-    2: "Partly cloudy",
-    3: "Overcast",
-    45: "Fog",
-    48: "Rime fog",
-    51: "Light drizzle",
-    53: "Drizzle",
-    55: "Heavy drizzle",
-    56: "Freezing drizzle",
-    57: "Heavy freezing drizzle",
-    61: "Light rain",
-    63: "Rain",
-    65: "Heavy rain",
-    66: "Freezing rain",
-    67: "Heavy freezing rain",
-    71: "Light snow",
-    73: "Snow",
-    75: "Heavy snow",
-    77: "Snow grains",
-    80: "Rain showers",
-    81: "Heavy showers",
-    82: "Violent showers",
-    85: "Snow showers",
-    86: "Heavy snow showers",
-    95: "Thunderstorm",
-    96: "TS with hail",
-    99: "TS with heavy hail"
+    0: "Clear", 1: "Mst clear", 2: "P cloudy", 3: "Overcast",
+    45: "Fog", 48: "Rime fog", 51: "Lt drizzle", 53: "Drizzle", 55: "Hvy drizzle",
+    61: "Lt rain", 63: "Rain", 65: "Hvy rain", 80: "Showers", 95: "TS"
 }
 
 def get_condition_description(code):
@@ -93,7 +69,7 @@ def fetch_noaa_forecast():
             return parsed
     return []
 
-# Fetch Open-Meteo Atmospheric + weather_code
+# Fetch Open-Meteo Atmospheric
 @st.cache_data(ttl=3600)
 def fetch_openmeteo_atmospheric(date):
     lat = 47.6062
@@ -140,7 +116,7 @@ def fetch_openmeteo_waves(date):
         return df
     return pd.DataFrame()
 
-# Fetch Sunrise/Sunset from Open-Meteo
+# Fetch Sunrise/Sunset
 @st.cache_data(ttl=3600)
 def fetch_sun_times(date):
     lat = 47.6062
@@ -182,11 +158,7 @@ else:
     openmeteo_df = atm_df if not atm_df.empty else pd.DataFrame()
 
 # Filter tides
-filtered_tides = []
-for tide in hilo_tides:
-    tide_time = datetime.strptime(tide['t'], "%Y-%m-%d %H:%M")
-    if shift_start <= tide_time < shift_end:
-        filtered_tides.append(tide)
+filtered_tides = [tide for tide in hilo_tides if shift_start <= datetime.strptime(tide['t'], "%Y-%m-%d %H:%M") < shift_end]
 
 # Period summary (compact)
 def period_summary(df, start_h, end_h):
@@ -207,34 +179,35 @@ def period_summary(df, start_h, end_h):
     }
     return summary
 
-# Alerts (compact)
+# Alerts
 if alerts:
     st.error("Active Alerts")
     for alert in alerts:
         props = alert['properties']
-        st.error(f"**{props['event']}**: {props.get('headline', '')}")
+        st.error(f"{props['event']}: {props.get('headline', '')}")
 else:
     st.success("No active alerts")
 
-# Tides and Sunrise/Sunset side-by-side
+# Tides + Sunrise/Sunset
 col_tides, col_sun = st.columns(2)
 with col_tides:
     st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
     if filtered_tides:
         for tide in filtered_tides:
             time_only = tide['t'][11:16]
-            st.write(f"**{tide['type'].title()}**: {time_only} — {tide['v']} ft")
+            arrow = "↑" if tide['type'].upper() == "H" else "↓"
+            st.write(f"{arrow} {time_only} — {tide['v']} ft")
     else:
         st.write("No tides in shift")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_sun:
-    st.markdown("<div class='box'><h3>Sunrise / Sunset</h3>", unsafe_allow_html=True)
-    st.write(f"**Sunrise**: {sunrise}")
-    st.write(f"**Sunset**: {sunset}")
+    st.markdown("<div class='box'><h3>Sun Times</h3>", unsafe_allow_html=True)
+    st.write(f"Sunrise: {sunrise}")
+    st.write(f"Sunset: {sunset}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Forecast Periods (condensed)
+# Forecast Periods - ultra-condensed
 if shift_date > today + timedelta(days=7):
     st.warning("Limited detail beyond 7 days")
 st.markdown("<h3>Forecast Periods</h3>", unsafe_allow_html=True)
@@ -250,20 +223,20 @@ for i, (period_name, start_h, end_h) in enumerate(time_periods):
     with cols[i % 2]:
         st.markdown(f"<div class='box'><h4>{period_name}</h4>", unsafe_allow_html=True)
         summary = period_summary(openmeteo_df, start_h, end_h)
-        st.write(f"**Cond**: {summary['condition']}")
-        st.write(f"**Waves**: {summary['wave']}")
-        st.write(f"**Wind**: {summary['wind']} ({summary['dir']}), gusts {summary['gust']}")
-        st.write(f"**Precip**: {summary['precip']}")
-        st.write(f"**Vis**: {summary['vis']}")
-        st.write(f"**Temp**: {summary['temp']}")
+        st.write(f"Cond: {summary['condition']}")
+        st.write(f"Waves: {summary['wave']}")
+        st.write(f"Wind: {summary['wind']} ({summary['dir']}), gusts {summary['gust']}")
+        st.write(f"Precip: {summary['precip']}")
+        st.write(f"Vis: {summary['vis']}")
+        st.write(f"Temp: {summary['temp']}")
         
         if i < len(noaa_periods):
             _, noaa_text = noaa_periods[i]
             formatted = noaa_text.replace('. ', '.<br>')
             st.markdown(f"<div class='noaa-text'><strong>NOAA:</strong><br>{formatted}</div>", unsafe_allow_html=True)
         else:
-            st.write("_NOAA detail unavailable_")
+            st.write("_NOAA unavailable_")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# Compact footer
-st.caption("Open-Meteo aggregate + NOAA | Use near dates for full detail | Stay safe")
+# Footer
+st.caption("Open-Meteo aggregate + NOAA | Stay safe")
