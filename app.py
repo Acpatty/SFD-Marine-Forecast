@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
 import pandas as pd
 import re
 
@@ -16,26 +15,31 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<div class='header'><h1 style='text-align: center;'>Seattle Fire Department:<br>Daily Marine Forecast</h1></div>", unsafe_allow_html=True)
+# Simple centered header
+st.markdown("<div class='header'><h1>Seattle Fire Department:<br>Daily Marine Forecast</h1></div>", unsafe_allow_html=True)
 
 # Shift date selector
 today = datetime.today().date()
 shift_date = st.date_input("Select Shift Start Date (0800)", today)
 
-# Fetch tides (cached for 1 hour)
+# Shift start and end times
+shift_start = datetime(shift_date.year, shift_date.month, shift_date.day, 8, 0)
+shift_end = shift_start + timedelta(days=1)
+
+# Fetch tides
 @st.cache_data(ttl=3600)
 def fetch_tides(date):
     begin = date.strftime("%Y%m%d")
     end = (date + timedelta(days=1)).strftime("%Y%m%d")
     hilo_url = f"https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?station=9447130&product=predictions&datum=MLLW&units=english&time_zone=lst_ldt&interval=hilo&format=json&begin_date={begin}&end_date={end}"
-    hourly_url = hilo_url.replace("&interval=hilo", "&interval=h")
-    hilo = requests.get(hilo_url).json().get('predictions', [])
-    hourly = requests.get(hourly_url).json().get('predictions', [])
-    return hilo, hourly
+    response = requests.get(hilo_url)
+    if response.status_code == 200:
+        return response.json().get('predictions', [])
+    return []
 
 # Fetch NOAA marine forecast
 @st.cache_data(ttl=3600)
-def fetch_forecast():
+def fetch_noaa_forecast():
     url = "https://api.weather.gov/zones/marine/PZZ135/forecast"
     headers = {'User-Agent': 'SFD Marine App'}
     response = requests.get(url, headers=headers)
@@ -43,7 +47,36 @@ def fetch_forecast():
         return response.json()['properties']['periods']
     return []
 
-# Fetch active alerts
+# Fetch Open-Meteo aggregate wave model
+@st.cache_data(ttl=3600)
+def fetch_openmeteo_waves(date):
+    # Seattle coords for central Puget Sound
+    lat = 47.6062
+    lon = -122.3321
+    start = date.strftime("%Y-%m-%d")
+    end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
+    variables = "wave_height,wind_wave_height,swell_wave_height,wave_direction,wave_period"
+    url = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly={variables}&start_date={start}&end_date={end}&timezone=America%2FLos_Angeles"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        hourly = data.get('hourly', {})
+        df = pd.DataFrame({
+            'time': pd.to_datetime(hourly.get('time', [])),
+            'wave_height_m': hourly.get('wave_height', []),
+            'wind_wave_m': hourly.get('wind_wave_height', []),
+            'swell_wave_m': hourly.get('swell_wave_height', []),
+            'wave_dir': hourly.get('wave_direction', []),
+            'wave_period': hourly.get('wave_period', [])
+        })
+        # Convert meters to feet (1 m ≈ 3.281 ft)
+        df['wave_height_ft'] = (df['wave_height_m'] * 3.281).round(1)
+        df['wind_wave_ft'] = (df['wind_wave_m'] * 3.281).round(1)
+        df['swell_wave_ft'] = (df['swell_wave_m'] * 3.281).round(1)
+        return df
+    return pd.DataFrame()
+
+# Fetch alerts
 @st.cache_data(ttl=1800)
 def fetch_alerts():
     url = "https://api.weather.gov/alerts/active?zone=PZZ135"
@@ -53,17 +86,25 @@ def fetch_alerts():
         return response.json().get('features', [])
     return []
 
-# Simple text extraction
+# Extraction helper
 def extract_from_text(text, keyword):
-    match = re.search(rf"{keyword}.*?(\d+[\d-]*\s*(kt|ft|miles)?)", text, re.IGNORECASE)
+    match = re.search(rf"{keyword}.*?(\d+[\d-]*\s*(kt|ft|miles|to|around|with|becoming|variable)?)", text, re.IGNORECASE)
     return match.group(1) if match else "N/A"
 
-# Load all data
-hilo_tides, hourly_tides = fetch_tides(shift_date)
-periods = fetch_forecast()
+# Load data
+hilo_tides = fetch_tides(shift_date)
+noaa_periods = fetch_noaa_forecast()
+openmeteo_df = fetch_openmeteo_waves(shift_date)
 alerts = fetch_alerts()
 
-# Weather Alerts Box
+# Filter tides within shift
+filtered_tides = []
+for tide in hilo_tides:
+    tide_time = datetime.strptime(tide['t'], "%Y-%m-%d %H:%M")
+    if shift_start <= tide_time < shift_end:
+        filtered_tides.append(tide)
+
+# Weather Alerts
 st.markdown("<div class='box'><h3>Weather Alerts</h3>", unsafe_allow_html=True)
 if alerts:
     for alert in alerts:
@@ -73,48 +114,61 @@ else:
     st.success("No active weather alerts for Puget Sound.")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Tides List
-st.markdown("<div class='box'><h3>Tides for Shift (Seattle, feet MLLW)</h3>", unsafe_allow_html=True)
-if hilo_tides:
-    for tide in hilo_tides:
-        time_only = tide['t'][11:]  # Show only time
+# Tides
+st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
+if filtered_tides:
+    for tide in filtered_tides:
+        time_only = tide['t'][11:]
         st.write(f"**{tide['type'].title()} Tide**: {time_only} — {tide['v']} ft")
 else:
-    st.write("Tide data currently unavailable.")
+    st.write("No tides within the 0800–0800 shift period.")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Tide Chart
-st.markdown("<h3>Tide Chart (0800 to 0800 next day)</h3>", unsafe_allow_html=True)
-if hourly_tides:
-    df = pd.DataFrame(hourly_tides[:25])  # ~24 hours
-    df['t'] = pd.to_datetime(df['t'])
-    df['v'] = pd.to_numeric(df['v'])
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(df['t'], df['v'], color='#001f3f', linewidth=2.5)
-    ax.set_title("Tide Height (ft MLLW)")
-    ax.set_ylabel("Height (ft)")
-    ax.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig)
+# Open-Meteo Aggregate Wave Model
+st.markdown("<div class='box'><h3>Open-Meteo Aggregate Wave Model (Puget Sound)</h3>", unsafe_allow_html=True)
+st.write("Significant wave height from global/local models (ICON, GFS Wave, etc.). Values in feet.")
+if not openmeteo_df.empty:
+    # Filter for shift period
+    shift_df = openmeteo_df[(openmeteo_df['time'] >= shift_start) & (openmeteo_df['time'] < shift_end)]
+    if not shift_df.empty:
+        # Summary stats for shift
+        max_wave = shift_df['wave_height_ft'].max()
+        avg_wave = shift_df['wave_height_ft'].mean().round(1)
+        max_wind_wave = shift_df['wind_wave_ft'].max()
+        max_swell = shift_df['swell_wave_ft'].max()
+        st.write(f"**Max Significant Wave Height**: {max_wave} ft")
+        st.write(f"**Average Significant Wave Height**: {avg_wave} ft")
+        st.write(f"**Max Wind Waves**: {max_wind_wave} ft")
+        st.write(f"**Max Swell Waves**: {max_swell} ft")
+        # Period summaries
+        st.write("**Morning (0800–1159)**: Waves ~{:.1f}–{:.1f} ft".format(
+            shift_df[shift_df['time'].dt.hour < 12]['wave_height_ft'].min(),
+            shift_df[shift_df['time'].dt.hour < 12]['wave_height_ft'].max()))
+        st.write("**Afternoon (1200–1659)**: Waves ~{:.1f}–{:.1f} ft".format(
+            shift_df[(shift_df['time'].dt.hour >= 12) & (shift_df['time'].dt.hour < 17)]['wave_height_ft'].min(),
+            shift_df[(shift_df['time'].dt.hour >= 12) & (shift_df['time'].dt.hour < 17)]['wave_height_ft'].max()))
+        st.write("**Evening (1700–2359)**: Waves ~{:.1f}–{:.1f} ft".format(
+            shift_df[shift_df['time'].dt.hour >= 17]['wave_height_ft'].min(),
+            shift_df[shift_df['time'].dt.hour >= 17]['wave_height_ft'].max()))
+        st.write("**Overnight (0000–0800)**: Waves ~{:.1f}–{:.1f} ft".format(
+            shift_df[shift_df['time'].dt.hour < 8]['wave_height_ft'].min(),
+            shift_df[shift_df['time'].dt.hour < 8]['wave_height_ft'].max()))
+    else:
+        st.write("No Open-Meteo wave data for selected shift.")
 else:
-    st.write("Tide chart unavailable.")
+    st.write("Open-Meteo wave data unavailable.")
+st.markdown("</div>", unsafe_allow_html=True)
 
-# Forecast Periods in two columns
-st.markdown("<h3>Forecast Periods (Puget Sound)</h3>", unsafe_allow_html=True)
+# NOAA Forecast Periods
+st.markdown("<h3>NOAA Forecast Periods (Puget Sound)</h3>", unsafe_allow_html=True)
 cols = st.columns(2)
-time_periods = [
-    "Morning (0800–1159)",
-    "Afternoon (1200–1659)",
-    "Evening (1700–2359)",
-    "Overnight (0000–0800)"
-]
+time_periods = ["Morning (0800–1159)", "Afternoon (1200–1659)", "Evening (1700–2359)", "Overnight (0000–0800)"]
 
 for i, period_name in enumerate(time_periods):
     with cols[i % 2]:
         st.markdown(f"<div class='box'><h4>{period_name}</h4>", unsafe_allow_html=True)
-        if i < len(periods):
-            p = periods[i]
+        if i < len(noaa_periods):
+            p = noaa_periods[i]
             text = p['detailedForecast']
             wind = extract_from_text(text, "wind")
             waves = extract_from_text(text, "wave|seas")
@@ -124,8 +178,8 @@ for i, period_name in enumerate(time_periods):
             st.write(f"**Wave Height**: {waves}")
             st.write(f"**Visibility**: {vis}")
         else:
-            st.write("Detailed forecast limited — check NOAA for latest.")
+            st.write("Detailed forecast unavailable.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
-st.caption("Data sourced primarily from NOAA. Always verify real-time conditions before operations. Stay safe on the water!")
+st.caption("Primary: NOAA. Waves enhanced with Open-Meteo aggregate model (global + local wave models). Cross-check Windy, AccuWeather, etc. Stay safe!")
