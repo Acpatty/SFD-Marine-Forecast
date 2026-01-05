@@ -37,14 +37,20 @@ def fetch_tides(date):
         return response.json().get('predictions', [])
     return []
 
-# Fetch NOAA marine forecast
+# Fetch NOAA marine text forecast and parse PZZ135
 @st.cache_data(ttl=3600)
 def fetch_noaa_forecast():
-    url = "https://api.weather.gov/zones/marine/PZZ135/forecast"
-    headers = {'User-Agent': 'SFD Marine App'}
-    response = requests.get(url, headers=headers)
+    url = "https://forecast.weather.gov/product.php?site=SEW&issuedby=SEW&product=CWF&format=txt&version=1&glossary=0"
+    response = requests.get(url)
     if response.status_code == 200:
-        return response.json()['properties']['periods']
+        text = response.text
+        # Find PZZ135 section
+        match = re.search(r'(PZZ135-.*?)(\n\nPZZ\d{3}-|\Z)', text, re.DOTALL)
+        if match:
+            zone_text = match.group(1).strip()
+            # Split into periods (lines starting with .period...)
+            periods = re.findall(r'^\.(\w+.*?)\.\.\.(.*?$)', zone_text, re.MULTILINE | re.DOTALL)
+            return periods  # List of (period_name, detailed_text)
     return []
 
 # Fetch Open-Meteo aggregate wave model
@@ -130,6 +136,8 @@ else:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # Forecast Periods with integrated wave data
+if shift_date > today + timedelta(days=7):
+    st.warning("Detailed NOAA forecasts unavailable for dates more than 7 days in the future. Showing available model data.")
 st.markdown("<h3>Forecast Periods (Puget Sound)</h3>", unsafe_allow_html=True)
 cols = st.columns(2)
 time_periods = [
@@ -145,23 +153,22 @@ for i, (period_name, start_h, end_h) in enumerate(time_periods):
         
         # Wave information from Open-Meteo
         wave_range = get_wave_range(openmeteo_df, start_h, end_h)
-        st.write(f"**Waves (Open-Meteo)**: {wave_range}")
+        st.write(f"**Waves (Open-Meteo Aggregate)**: {wave_range}")
         
         # NOAA text forecast
         if i < len(noaa_periods):
-            p = noaa_periods[i]
-            text = p['detailedForecast']
+            period_name_noaa, text = noaa_periods[i]
             wind = extract_from_text(text, "wind")
-            waves_noaa = extract_from_text(text, "wave|seas")
+            waves_noaa = extract_from_text(text, "wave|waves")
             vis = extract_from_text(text, "visibility")
-            st.write(f"**Conditions**: {p.get('shortForecast', text.split('.')[0])}")
+            st.write(f"**Conditions**: {period_name_noaa} - {text.split('.')[0]}")
             st.write(f"**Wind**: {wind}")
             st.write(f"**Wave Height (NOAA)**: {waves_noaa}")
             st.write(f"**Visibility**: {vis}")
         else:
-            st.write("Detailed NOAA forecast unavailable.")
+            st.write("Detailed NOAA forecast unavailable for this period.")
         
         st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
-st.caption("Primary: NOAA | Waves: Open-Meteo aggregate model (global + local wave models) | Cross-check Windy, AccuWeather, etc. | Stay safe!")
+st.caption("Primary: NOAA (live text forecast). Waves: Open-Meteo aggregate model. Cross-check Windy, AccuWeather, etc. Stay safe!")
