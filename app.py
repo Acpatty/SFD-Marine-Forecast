@@ -3,12 +3,20 @@ import requests
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import pandas as pd
-import re  # For better text parsing
+import re
+import base64
+
+# Embedded fireboat image (Base64) - no local file needed!
+fireboat_base64 = "iVBORw0KGgoAAAANSUhEUgAAA...[full base64 string here]...AAA=="  # We'll get this next
+
+# Decode for display
+def get_base64_image():
+    return base64.b64decode(fireboat_base64)
 
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS for subdued blues/greys
+# Custom CSS
 st.markdown("""
 <style>
 .header {background-color: #001f3f; padding: 20px; text-align: center; color: white;}
@@ -16,10 +24,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header with logo
+# Header with embedded logo
 col1, col2 = st.columns([1,5])
 with col1:
-    st.image("fireboat.png", width=120)
+    st.image(get_base64_image(), width=120)
 with col2:
     st.markdown("<div class='header'><h1>Seattle Fire Department:<br>Daily Marine Forecast</h1></div>", unsafe_allow_html=True)
 
