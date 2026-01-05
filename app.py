@@ -7,7 +7,7 @@ import re
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - more compact and readable
+# Custom CSS - compact and readable
 st.markdown("""
 <style>
 .header {background-color: #001f3f; padding: 15px; text-align: center; color: white; margin-bottom: 20px;}
@@ -28,7 +28,7 @@ shift_date = st.date_input("Shift Start Date (0800)", value=today)
 shift_start = datetime(shift_date.year, shift_date.month, shift_date.day, 8, 0)
 shift_end = shift_start + timedelta(days=1)
 
-# WMO Weather Code mapping (shortened descriptions)
+# WMO Weather Code mapping (shortened)
 WMO_CODES = {
     0: "Clear",
     1: "Mostly clear",
@@ -140,6 +140,23 @@ def fetch_openmeteo_waves(date):
         return df
     return pd.DataFrame()
 
+# Fetch Sunrise/Sunset from Open-Meteo
+@st.cache_data(ttl=3600)
+def fetch_sun_times(date):
+    lat = 47.6062
+    lon = -122.3321
+    start = date.strftime("%Y-%m-%d")
+    end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=sunrise,sunset&timezone=America%2FLos_Angeles&start_date={start}&end_date={end}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json().get('daily', {})
+        if data:
+            sunrise = data['sunrise'][0][11:] if data['sunrise'] else "N/A"
+            sunset = data['sunset'][0][11:] if data['sunset'] else "N/A"
+            return sunrise, sunset
+    return "N/A", "N/A"
+
 # Fetch alerts
 @st.cache_data(ttl=1800)
 def fetch_alerts():
@@ -155,6 +172,7 @@ hilo_tides = fetch_tides(shift_date)
 noaa_periods = fetch_noaa_forecast()
 atm_df = fetch_openmeteo_atmospheric(shift_date)
 wave_df = fetch_openmeteo_waves(shift_date)
+sunrise, sunset = fetch_sun_times(shift_date)
 alerts = fetch_alerts()
 
 # Merge data
@@ -198,17 +216,25 @@ if alerts:
 else:
     st.success("No active alerts")
 
-# Tides (compact)
-st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
-if filtered_tides:
-    for tide in filtered_tides:
-        time_only = tide['t'][11:16]  # Just HH:MM
-        st.write(f"**{tide['type'].title()}**: {time_only} — {tide['v']} ft")
-else:
-    st.write("No tides in shift")
-st.markdown("</div>", unsafe_allow_html=True)
+# Tides and Sunrise/Sunset side-by-side
+col_tides, col_sun = st.columns(2)
+with col_tides:
+    st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
+    if filtered_tides:
+        for tide in filtered_tides:
+            time_only = tide['t'][11:16]
+            st.write(f"**{tide['type'].title()}**: {time_only} — {tide['v']} ft")
+    else:
+        st.write("No tides in shift")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# Forecast Periods (condensed layout)
+with col_sun:
+    st.markdown("<div class='box'><h3>Sunrise / Sunset</h3>", unsafe_allow_html=True)
+    st.write(f"**Sunrise**: {sunrise}")
+    st.write(f"**Sunset**: {sunset}")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Forecast Periods (condensed)
 if shift_date > today + timedelta(days=7):
     st.warning("Limited detail beyond 7 days")
 st.markdown("<h3>Forecast Periods</h3>", unsafe_allow_html=True)
