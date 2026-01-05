@@ -19,7 +19,7 @@ st.markdown("""
 # Header with logo (direct reliable link to the exact SFD Fireboat patch)
 col1, col2 = st.columns([1, 6])
 with col1:
-    st.image("https://i.imgur.com/0kE8Z0j.png", width=120)  # Permanent link to your patch
+ st.image("https://i.imgur.com/0kE8Z0j.png", width=120)   
 with col2:
     st.markdown("<div class='header'><h1>Seattle Fire Department:<br>Daily Marine Forecast</h1></div>", unsafe_allow_html=True)
 
