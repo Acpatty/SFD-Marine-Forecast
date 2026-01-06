@@ -8,19 +8,42 @@ import math
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - ultra-compact
+# Custom CSS - ultra-compact + header with four images
 st.markdown("""
 <style>
-.header {background-color: #001f3f; padding: 12px; text-align: center; color: white; margin-bottom: 15px;}
-.box {background-color: #f0f5fa; border-radius: 8px; padding: 10px; margin: 6px 0; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);}
+.header {background-color: #001f3f; padding: 10px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;}
+.header img {max-height: 90px; width: auto;}
 .noaa-text {white-space: pre-wrap; line-height: 1.3; font-size: 0.88rem; margin-top: 6px;}
 h3, h4 {margin: 0 0 6px 0;}
 p {margin: 4px 0 !important;}
+@media (max-width: 768px) {
+    .header {flex-direction: column; text-align: center;}
+    .header img {max-height: 70px; margin: 5px 0;}
+}
 </style>
 """, unsafe_allow_html=True)
 
-# Compact header
-st.markdown("<div class='header'><h2>SFD Daily Marine Forecast</h2></div>", unsafe_allow_html=True)
+# New header with four images
+st.markdown("<div class='header'>", unsafe_allow_html=True)
+
+col1, col2, col3, col4, col_title = st.columns([1, 1, 1, 1, 4])
+
+with col1:
+    st.image("https://i.imgur.com/NEW_SFD_PATCH_URL.png", use_column_width=True)  # City of Seattle Fire Dept maltese cross
+
+with col2:
+    st.image("https://i.imgur.com/0kE8Z0j.png", use_column_width=True)  # Fireboat patch
+
+with col3:
+    st.image("https://i.imgur.com/2mK0Z4k.png", use_column_width=True)  # Engine 5 green patch
+
+with col4:
+    st.image("https://i.imgur.com/3nL5p7q.png", use_column_width=True)  # Dive Rescue swimmer patch
+
+with col_title:
+    st.markdown("<h2 style='color: white; text-align: center; margin: 0;'>SFD Daily Marine Forecast</h2>", unsafe_allow_html=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 # Auto-default to today
 today = datetime.today().date()
@@ -99,7 +122,7 @@ def fetch_openmeteo_atmospheric(date):
         return df
     return pd.DataFrame()
 
-# Fetch Open-Meteo Waves + Sea Surface Temperature
+# Fetch Open-Meteo Waves + Water Temp
 @st.cache_data(ttl=3600)
 def fetch_openmeteo_marine(date):
     lat = 47.6062
@@ -192,24 +215,9 @@ def get_moon_phase_desc(code):
         return "N/A", "N/A"
     phase = code
     illumination = round((1 - math.cos(2 * math.pi * phase)) / 2 * 100)
-    if phase == 0:
-        name = "New Moon"
-    elif 0 < phase < 0.25:
-        name = "Waxing Crescent"
-    elif phase == 0.25:
-        name = "First Quarter"
-    elif 0.25 < phase < 0.5:
-        name = "Waxing Gibbous"
-    elif phase == 0.5:
-        name = "Full Moon"
-    elif 0.5 < phase < 0.75:
-        name = "Waning Gibbous"
-    elif phase == 0.75:
-        name = "Last Quarter"
-    elif 0.75 < phase < 1:
-        name = "Waning Crescent"
-    else:
-        name = "New Moon"
+    names = ["New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous", "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent"]
+    index = min(int(phase * 8), 7)
+    name = names[index]
     return name, f"{illumination}% Illuminated"
 
 # UV Index description
@@ -217,16 +225,8 @@ def get_uv_desc(index):
     if index is None:
         return "N/A", "N/A"
     index = round(index)
-    if index <= 2:
-        level = "Low"
-    elif index <= 5:
-        level = "Moderate"
-    elif index <= 7:
-        level = "High"
-    elif index <= 10:
-        level = "Very High"
-    else:
-        level = "Extreme"
+    levels = ["Low", "Low", "Moderate", "Moderate", "Moderate", "High", "High", "Very High", "Very High", "Very High", "Extreme"]
+    level = levels[min(index, 10)]
     return index, level
 
 # Alerts
