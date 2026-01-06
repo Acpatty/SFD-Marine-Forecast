@@ -3,11 +3,12 @@ import requests
 from datetime import datetime, timedelta
 import pandas as pd
 import re
+import math
 
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - ultra-compact + mobile-friendly
+# Custom CSS - ultra-compact
 st.markdown("""
 <style>
 .header {background-color: #001f3f; padding: 12px; text-align: center; color: white; margin-bottom: 15px;}
@@ -15,13 +16,6 @@ st.markdown("""
 .noaa-text {white-space: pre-wrap; line-height: 1.3; font-size: 0.88rem; margin-top: 6px;}
 h3, h4 {margin: 0 0 6px 0;}
 p {margin: 4px 0 !important;}
-/* Force single column on mobile */
-@media (max-width: 768px) {
-    div[data-testid="column"] {
-        width: 100% !important;
-        flex: 1 1 100% !important;
-    }
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,7 +66,8 @@ def fetch_noaa_forecast():
             for m in period_matches:
                 period_name = m.group(1).strip().upper()
                 detail = m.group(2).strip()
-                parsed.append((period_name, detail))
+                if detail:
+                    parsed.append((period_name, detail))
             return parsed
     return []
 
@@ -104,41 +99,45 @@ def fetch_openmeteo_atmospheric(date):
         return df
     return pd.DataFrame()
 
-# Fetch Open-Meteo Waves
+# Fetch Open-Meteo Waves + Sea Surface Temperature
 @st.cache_data(ttl=3600)
-def fetch_openmeteo_waves(date):
+def fetch_openmeteo_marine(date):
     lat = 47.6062
     lon = -122.3321
     start = date.strftime("%Y-%m-%d")
     end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
-    hourly_vars = "wave_height"
-    url = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly={hourly_vars}&start_date={start}&end_date={end}&timezone=America%2FLos_Angeles"
+    hourly_vars = "wave_height,sea_surface_temperature"
+    url = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly={hourly_vars}&start_date={start}&end_date={end}&timezone=America%2FLos_Angeles&temperature_unit=fahrenheit"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json().get('hourly', {})
         df = pd.DataFrame({
             'time': pd.to_datetime(data.get('time', [])),
-            'wave_height_ft': [(round(x * 3.281, 1) if x is not None else None) for x in data.get('wave_height', [])]
+            'wave_height_ft': [(round(x * 3.281, 1) if x is not None else None) for x in data.get('wave_height', [])],
+            'water_temp_f': [round(x) if x is not None else None for x in data.get('sea_surface_temperature', [])]
         })
         return df
     return pd.DataFrame()
 
-# Fetch Sunrise/Sunset
+# Fetch Sunrise/Sunset + Moon Phase + UV Index
 @st.cache_data(ttl=3600)
-def fetch_sun_times(date):
+def fetch_astronomy(date):
     lat = 47.6062
     lon = -122.3321
     start = date.strftime("%Y-%m-%d")
     end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=sunrise,sunset&timezone=America%2FLos_Angeles&start_date={start}&end_date={end}"
+    daily_vars = "sunrise,sunset,moon_phase,uv_index_max"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily={daily_vars}&timezone=America%2FLos_Angeles&start_date={start}&end_date={end}"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json().get('daily', {})
         if data:
             sunrise = data['sunrise'][0][11:] if data['sunrise'] else "N/A"
             sunset = data['sunset'][0][11:] if data['sunset'] else "N/A"
-            return sunrise, sunset
-    return "N/A", "N/A"
+            moon_phase = data.get('moon_phase', [None])[0]
+            uv_max = data.get('uv_index_max', [None])[0]
+            return sunrise, sunset, moon_phase, uv_max
+    return "N/A", "N/A", None, None
 
 # Fetch alerts
 @st.cache_data(ttl=1800)
@@ -154,24 +153,24 @@ def fetch_alerts():
 hilo_tides = fetch_tides(shift_date)
 noaa_periods = fetch_noaa_forecast()
 atm_df = fetch_openmeteo_atmospheric(shift_date)
-wave_df = fetch_openmeteo_waves(shift_date)
-sunrise, sunset = fetch_sun_times(shift_date)
+marine_df = fetch_openmeteo_marine(shift_date)
+sunrise, sunset, moon_phase_code, uv_max = fetch_astronomy(shift_date)
 alerts = fetch_alerts()
 
 # Merge data
-if not atm_df.empty and not wave_df.empty:
-    openmeteo_df = pd.merge(atm_df, wave_df[['time', 'wave_height_ft']], on='time', how='left')
+if not atm_df.empty and not marine_df.empty:
+    openmeteo_df = pd.merge(atm_df, marine_df[['time', 'wave_height_ft', 'water_temp_f']], on='time', how='left')
 else:
     openmeteo_df = atm_df if not atm_df.empty else pd.DataFrame()
 
 # Filter tides
 filtered_tides = [tide for tide in hilo_tides if shift_start <= datetime.strptime(tide['t'], "%Y-%m-%d %H:%M") < shift_end]
 
-# Period summary (compact)
+# Period summary with water temp
 def period_summary(df, start_h, end_h):
     period_df = df[(df['time'].dt.hour >= start_h) & (df['time'].dt.hour < end_h)]
     if period_df.empty:
-        return {k: "N/A" for k in ['condition', 'wave', 'wind', 'gust', 'precip', 'vis', 'temp']}
+        return {k: "N/A" for k in ['condition', 'wave', 'wind', 'gust', 'precip', 'vis', 'temp', 'water_temp']}
     mode_code = period_df['weather_code'].mode()
     condition = get_condition_description(int(mode_code[0])) if not mode_code.empty else "N/A"
     summary = {
@@ -182,9 +181,53 @@ def period_summary(df, start_h, end_h):
         'gust': f"{period_df['wind_gust_kt'].max():.0f} kt" if period_df['wind_gust_kt'].notna().any() else "N/A",
         'precip': f"{period_df['precip_in'].sum():.2f} in" if period_df['precip_in'].sum() > 0 else "None",
         'vis': f"{period_df['visibility_mi'].min():.1f}–{period_df['visibility_mi'].max():.1f} mi" if period_df['visibility_mi'].notna().any() else "N/A",
-        'temp': f"{period_df['temp_f'].min():.0f}–{period_df['temp_f'].max():.0f} °F" if period_df['temp_f'].notna().any() else "N/A"
+        'temp': f"{period_df['temp_f'].min():.0f}–{period_df['temp_f'].max():.0f} °F" if period_df['temp_f'].notna().any() else "N/A",
+        'water_temp': f"{period_df['water_temp_f'].mean():.0f} °F" if 'water_temp_f' in period_df.columns and period_df['water_temp_f'].notna().any() else "N/A"
     }
     return summary
+
+# Moon phase description
+def get_moon_phase_desc(code):
+    if code is None:
+        return "N/A", "N/A"
+    phase = code
+    illumination = round((1 - math.cos(2 * math.pi * phase)) / 2 * 100)
+    if phase == 0:
+        name = "New Moon"
+    elif 0 < phase < 0.25:
+        name = "Waxing Crescent"
+    elif phase == 0.25:
+        name = "First Quarter"
+    elif 0.25 < phase < 0.5:
+        name = "Waxing Gibbous"
+    elif phase == 0.5:
+        name = "Full Moon"
+    elif 0.5 < phase < 0.75:
+        name = "Waning Gibbous"
+    elif phase == 0.75:
+        name = "Last Quarter"
+    elif 0.75 < phase < 1:
+        name = "Waning Crescent"
+    else:
+        name = "New Moon"
+    return name, f"{illumination}% Illuminated"
+
+# UV Index description
+def get_uv_desc(index):
+    if index is None:
+        return "N/A", "N/A"
+    index = round(index)
+    if index <= 2:
+        level = "Low"
+    elif index <= 5:
+        level = "Moderate"
+    elif index <= 7:
+        level = "High"
+    elif index <= 10:
+        level = "Very High"
+    else:
+        level = "Extreme"
+    return index, level
 
 # Alerts
 if alerts:
@@ -195,9 +238,9 @@ if alerts:
 else:
     st.success("No active alerts")
 
-# Tides + Sun Times
-col_tides, col_sun = st.columns(2)
-with col_tides:
+# Tides + Sunrise/Sunset + Moon + UV + Water Temp (5 columns)
+col1, col2, col3, col4, col5 = st.columns(5)
+with col1:
     st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
     if filtered_tides:
         for tide in filtered_tides:
@@ -208,13 +251,36 @@ with col_tides:
         st.write("No tides in shift")
     st.markdown("</div>", unsafe_allow_html=True)
 
-with col_sun:
-    st.markdown("<div class='box'><h3>Sun Times</h3>", unsafe_allow_html=True)
+with col2:
+    st.markdown("<div class='box'><h3>Sunrise / Sunset</h3>", unsafe_allow_html=True)
     st.write(f"Sunrise: {sunrise}")
     st.write(f"Sunset: {sunset}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Forecast Periods - mobile-friendly (single column on phone)
+with col3:
+    moon_name, moon_illum = get_moon_phase_desc(moon_phase_code)
+    st.markdown("<div class='box'><h3>Moon</h3>", unsafe_allow_html=True)
+    st.write(f"**{moon_name}**")
+    st.write(moon_illum)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col4:
+    uv_index, uv_level = get_uv_desc(uv_max)
+    st.markdown("<div class='box'><h3>UV Index</h3>", unsafe_allow_html=True)
+    st.write(f"**{uv_index}**")
+    st.write(uv_level)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col5:
+    st.markdown("<div class='box'><h3>Water Temp</h3>", unsafe_allow_html=True)
+    avg_water_temp = openmeteo_df['water_temp_f'].mean() if 'water_temp_f' in openmeteo_df.columns and openmeteo_df['water_temp_f'].notna().any() else None
+    if avg_water_temp is not None:
+        st.write(f"**{round(avg_water_temp)} °F**")
+    else:
+        st.write("N/A")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Forecast Periods
 if shift_date > today + timedelta(days=7):
     st.warning("Limited detail beyond 7 days")
 st.markdown("<h3>Forecast Periods</h3>", unsafe_allow_html=True)
@@ -235,17 +301,17 @@ for period_name, start_h, end_h in time_periods:
     st.write(f"**Precip**: {summary['precip']}")
     st.write(f"**Vis**: {summary['vis']}")
     st.write(f"**Temp**: {summary['temp']}")
+    st.write(f"**Water Temp**: {summary['water_temp']}")
     
-    # Find matching NOAA period (improved matching)
-    matched_text = "_NOAA unavailable_"
+    matched = False
     for noaa_name, noaa_text in noaa_periods:
         if any(word in noaa_name.upper() for word in period_name.upper().split()):
-            matched_text = noaa_text.replace('. ', '.<br>')
+            formatted = noaa_text.replace('. ', '.<br>')
+            st.markdown(f"<div class='noaa-text'><strong>NOAA:</strong><br>{formatted}</div>", unsafe_allow_html=True)
+            matched = True
             break
-    if matched_text != "_NOAA unavailable_":
-        st.markdown(f"<div class='noaa-text'><strong>NOAA:</strong><br>{matched_text}</div>", unsafe_allow_html=True)
-    else:
-        st.write(matched_text)
+    if not matched:
+        st.write("_NOAA detail unavailable_")
     
     st.markdown("</div>", unsafe_allow_html=True)
 
