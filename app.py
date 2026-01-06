@@ -8,10 +8,10 @@ import math
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - compact header with images
+# Custom CSS - compact + fixed header
 st.markdown("""
 <style>
-.header {background-color: #001f3f; padding: 15px; text-align: center; color: white; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 15px;}
+.header {background-color: #001f3f; padding: 15px; text-align: center; color: white; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 20px;}
 .header img {max-height: 80px; width: auto;}
 .box {background-color: #f0f5fa; border-radius: 8px; padding: 10px; margin: 6px 0; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);}
 .noaa-text {white-space: pre-wrap; line-height: 1.3; font-size: 0.88rem; margin-top: 6px;}
@@ -26,13 +26,11 @@ p {margin: 4px 0 !important;}
 
 # Header with four images + title
 st.markdown("<div class='header'>", unsafe_allow_html=True)
-
 st.image("https://i.imgur.com/7zL5v3k.png", width=80)  # City of Seattle Fire Dept
 st.image("https://i.imgur.com/0kE8Z0j.png", width=80)  # Fireboat
 st.markdown("<h2 style='color: white; margin: 0;'>SFD Daily Marine Forecast</h2>", unsafe_allow_html=True)
 st.image("https://i.imgur.com/2mK0Z4k.png", width=80)  # Engine 5
 st.image("https://i.imgur.com/3nL5p7q.png", width=80)  # Dive Rescue
-
 st.markdown("</div>", unsafe_allow_html=True)
 
 # Auto-default to today
