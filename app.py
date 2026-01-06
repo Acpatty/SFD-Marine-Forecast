@@ -7,7 +7,7 @@ import re
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - ultra-compact
+# Custom CSS - ultra-compact + mobile-friendly
 st.markdown("""
 <style>
 .header {background-color: #001f3f; padding: 12px; text-align: center; color: white; margin-bottom: 15px;}
@@ -15,6 +15,13 @@ st.markdown("""
 .noaa-text {white-space: pre-wrap; line-height: 1.3; font-size: 0.88rem; margin-top: 6px;}
 h3, h4 {margin: 0 0 6px 0;}
 p {margin: 4px 0 !important;}
+/* Force single column on mobile */
+@media (max-width: 768px) {
+    div[data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -188,7 +195,7 @@ if alerts:
 else:
     st.success("No active alerts")
 
-# Tides + Sunrise/Sunset
+# Tides + Sun Times
 col_tides, col_sun = st.columns(2)
 with col_tides:
     st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
@@ -207,11 +214,11 @@ with col_sun:
     st.write(f"Sunset: {sunset}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Forecast Periods - ultra-condensed
+# Forecast Periods - mobile-friendly (single column on phone)
 if shift_date > today + timedelta(days=7):
     st.warning("Limited detail beyond 7 days")
 st.markdown("<h3>Forecast Periods</h3>", unsafe_allow_html=True)
-cols = st.columns(2)
+
 time_periods = [
     ("Morning (0800–1159)", 8, 12),
     ("Afternoon (1200–1659)", 12, 17),
@@ -219,24 +226,28 @@ time_periods = [
     ("Overnight (0000–0800)", 0, 8)
 ]
 
-for i, (period_name, start_h, end_h) in enumerate(time_periods):
-    with cols[i % 2]:
-        st.markdown(f"<div class='box'><h4>{period_name}</h4>", unsafe_allow_html=True)
-        summary = period_summary(openmeteo_df, start_h, end_h)
-        st.write(f"Cond: {summary['condition']}")
-        st.write(f"Waves: {summary['wave']}")
-        st.write(f"Wind: {summary['wind']} ({summary['dir']}), gusts {summary['gust']}")
-        st.write(f"Precip: {summary['precip']}")
-        st.write(f"Vis: {summary['vis']}")
-        st.write(f"Temp: {summary['temp']}")
-        
-        if i < len(noaa_periods):
-            _, noaa_text = noaa_periods[i]
-            formatted = noaa_text.replace('. ', '.<br>')
-            st.markdown(f"<div class='noaa-text'><strong>NOAA:</strong><br>{formatted}</div>", unsafe_allow_html=True)
-        else:
-            st.write("_NOAA unavailable_")
-        st.markdown("</div>", unsafe_allow_html=True)
+for period_name, start_h, end_h in time_periods:
+    st.markdown(f"<div class='box'><h4>{period_name}</h4>", unsafe_allow_html=True)
+    summary = period_summary(openmeteo_df, start_h, end_h)
+    st.write(f"**Cond**: {summary['condition']}")
+    st.write(f"**Waves**: {summary['wave']}")
+    st.write(f"**Wind**: {summary['wind']} ({summary['dir']}), gusts {summary['gust']}")
+    st.write(f"**Precip**: {summary['precip']}")
+    st.write(f"**Vis**: {summary['vis']}")
+    st.write(f"**Temp**: {summary['temp']}")
+    
+    # Find matching NOAA period (improved matching)
+    matched_text = "_NOAA unavailable_"
+    for noaa_name, noaa_text in noaa_periods:
+        if any(word in noaa_name.upper() for word in period_name.upper().split()):
+            matched_text = noaa_text.replace('. ', '.<br>')
+            break
+    if matched_text != "_NOAA unavailable_":
+        st.markdown(f"<div class='noaa-text'><strong>NOAA:</strong><br>{matched_text}</div>", unsafe_allow_html=True)
+    else:
+        st.write(matched_text)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.caption("Open-Meteo aggregate + NOAA | Stay safe")
