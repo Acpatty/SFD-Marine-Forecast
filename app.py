@@ -8,30 +8,19 @@ import math
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - compact header with images
+# Custom CSS - compact, no header images
 st.markdown("""
 <style>
-.header {background-color: #001f3f; padding: 15px; text-align: center; color: white; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 20px;}
-.header img {max-height: 80px; width: auto;}
+.header {background-color: #001f3f; padding: 20px; text-align: center; color: white; margin-bottom: 20px;}
 .box {background-color: #f0f5fa; border-radius: 8px; padding: 10px; margin: 6px 0; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);}
 .noaa-text {white-space: pre-wrap; line-height: 1.3; font-size: 0.88rem; margin-top: 6px;}
 h3, h4 {margin: 0 0 6px 0;}
 p {margin: 4px 0 !important;}
-@media (max-width: 768px) {
-    .header {flex-direction: column; gap: 10px;}
-    .header img {max-height: 60px;}
-}
 </style>
 """, unsafe_allow_html=True)
 
-# Header with four images + title
-st.markdown("<div class='header'>", unsafe_allow_html=True)
-st.image("https://i.imgur.com/7zL5v3k.png", width=80)  # City of Seattle Fire Dept
-st.image("https://i.imgur.com/0kE8Z0j.png", width=80)  # Fireboat
-st.markdown("<h2 style='color: white; margin: 0;'>SFD Daily Marine Forecast</h2>", unsafe_allow_html=True)
-st.image("https://i.imgur.com/2mK0Z4k.png", width=80)  # Engine 5
-st.image("https://i.imgur.com/3nL5p7q.png", width=80)  # Dive Rescue
-st.markdown("</div>", unsafe_allow_html=True)
+# Simple header (no images)
+st.markdown("<div class='header'><h2>SFD Daily Marine Forecast</h2></div>", unsafe_allow_html=True)
 
 # Auto-default to today
 today = datetime.today().date()
@@ -49,7 +38,7 @@ WMO_CODES = {
 }
 
 def get_condition_description(code):
-    return WMO_CODES.get(code, "Unknown")
+    return WMO_CODES.get(code, "N/A")
 
 # Fetch tides
 @st.cache_data(ttl=3600)
@@ -82,7 +71,7 @@ def fetch_noaa_forecast():
             return parsed
     return []
 
-# Fetch Open-Meteo Atmospheric (fixed timezone)
+# Fetch Open-Meteo Atmospheric (removed timezone to avoid 400 error)
 @st.cache_data(ttl=3600)
 def fetch_openmeteo_atmospheric(date):
     lat = 47.6062
@@ -226,7 +215,7 @@ if alerts:
 else:
     st.success("No active alerts")
 
-# Tides + Sun + Moon + UV + Water Temp
+# Tides + Sunrise/Sunset + Moon + UV + Water Temp
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.markdown("<div class='box'><h3>Tides</h3>", unsafe_allow_html=True)
