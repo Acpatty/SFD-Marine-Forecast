@@ -8,7 +8,7 @@ import math
 # Page config
 st.set_page_config(page_title="SFD Marine Forecast", layout="wide")
 
-# Custom CSS - compact + fixed header
+# Custom CSS - compact header with images
 st.markdown("""
 <style>
 .header {background-color: #001f3f; padding: 15px; text-align: center; color: white; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 20px;}
@@ -82,7 +82,7 @@ def fetch_noaa_forecast():
             return parsed
     return []
 
-# Fetch Open-Meteo Atmospheric
+# Fetch Open-Meteo Atmospheric (fixed timezone)
 @st.cache_data(ttl=3600)
 def fetch_openmeteo_atmospheric(date):
     lat = 47.6062
@@ -90,7 +90,7 @@ def fetch_openmeteo_atmospheric(date):
     start = date.strftime("%Y-%m-%d")
     end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
     hourly_vars = "temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,visibility,cloud_cover,weather_code"
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly={hourly_vars}&start_date={start}&end_date={end}&timezone=America%2FLos_Angeles&wind_speed_unit=kn&temperature_unit=fahrenheit&precipitation_unit=inch"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly={hourly_vars}&start_date={start}&end_date={end}&wind_speed_unit=kn&temperature_unit=fahrenheit&precipitation_unit=inch"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json().get('hourly', {})
@@ -118,7 +118,7 @@ def fetch_openmeteo_marine(date):
     start = date.strftime("%Y-%m-%d")
     end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
     hourly_vars = "wave_height,sea_surface_temperature"
-    url = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly={hourly_vars}&start_date={start}&end_date={end}&timezone=America%2FLos_Angeles&temperature_unit=fahrenheit"
+    url = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&hourly={hourly_vars}&start_date={start}&end_date={end}&temperature_unit=fahrenheit"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json().get('hourly', {})
@@ -138,7 +138,7 @@ def fetch_astronomy(date):
     start = date.strftime("%Y-%m-%d")
     end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
     daily_vars = "sunrise,sunset,moon_phase,uv_index_max"
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily={daily_vars}&timezone=America%2FLos_Angeles&start_date={start}&end_date={end}"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily={daily_vars}&start_date={start}&end_date={end}"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json().get('daily', {})
